@@ -111,9 +111,6 @@
 	}
 
 	function process(){
-		console.log(document.gerElemntById);
-		/*var sketchCenter = new Path.Circle(new Point(0,0), 20);
-        sketchCenter.strokeColor = 'blue';*/
 		newSketch= new srlib.core.data.container.Sketch();  //Shows the origin (x,y)= (0,0) which is at the top left corner
 		document.getElementById('questionlabel').innerHTML = 'Draw inner parts';
 		findIfClosedSketch(sketch);
@@ -129,11 +126,7 @@
 			}
 
 		}
-		// for (var j = 1; j < points.length; j++){
-		// 	console.log(points[j]);
-		// }
-		//console.log(points.length);
- 		//console.log(points.length);
+
  		var deltaX = [];
  		var deltaY = [];
  		var theta = [];
