@@ -7,6 +7,13 @@ body {
 
 /* Scale canvas with resize attribute to full size */
 canvas {
-    width: 100%;
+    width: 80%;
     height: 100%;
+}
+
+#out{
+    align-self:right;
+    width: 20%;
+    height: 100%;
+    text-overflow: scroll;
 }
