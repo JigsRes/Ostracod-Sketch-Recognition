@@ -6,12 +6,7 @@
 	<canvas id="myCanvas" resize="true"></canvas>
 	<div style="position:fixed;top:0px;left:0px">
 	<label id="questionlabel">Draw Maximum Length</label></div>
-	<!-- <div style="position:fixed;bottom:0px;left:0px">
-	<label id="consolelabel">console messages</label></div> -->
-
-	 <div id="out" style="position:fixed;top:20px;right:0px">  <label id="output">Output</label> </div>
-
-	<!--   <div id="outlabel" style="position:fixed;bottom:0px;right:0px">  <label id="output1">Output</label></div> -->
+	<div id="out" style="position:fixed;top:20px;right:0px">  <label id="output">Output</label> </div>
 	<div style="position:fixed;top:0px;right:0px" id="filebutton">
 	<input type="file" id="myFile" onchange="setBackground()">
 	
@@ -29,800 +24,721 @@
 	var strokeCount = 0;
 	var maxLength1;
 	var maxLength2;
-	var inputSpecie
+	var inputSpecie;
+	var path;
+	var userDefineMaxLength;
+	var centroidCircle;
+	var sketch;
+	var stroke;
 
-	  
-
-	  function setBackground(){
-	  	var x = document.getElementById("myFile").value;
-	  	var name= x.split("\\");
-	    console.log(name[name.length-1]);
-	    document.getElementById("myCanvas").style.backgroundImage = "url(" + name[name.length-1] + ")";
-	    inputSpecie= name[name.length-1];    
-	    //paper.setup('myCanvas');
-	  }
 	
-	
-	window.onload = function() {
-		paper.setup('myCanvas');
-		// Create a simple drawing tool:
-		var tool = new Tool();
-		var path;
-		var userDefineMaxLength;
-		path = new Path();
-        userDefineMaxLength = new Path();
+		window.onload = function () {
+			paper.setup('myCanvas');
+			// Create a simple drawing tool:
+			var tool = new Tool();
+			path = new Path();
+			userDefineMaxLength = new Path();
 
 
- 	
 
-		// Define a mousedown and mousedrag handler
-		tool.onMouseDown =function(event) {
-		// PaperJS add a new Path object and initial starting point
-		//path = new Path();
-		if (strokeCount == 0){
-			userDefineMaxLength.strokeColor = 'black';
-			userDefineMaxLength.strokeWidth = 2;
-			maxLength1 = new srlib.core.data.container.Point(event.point.x, event.point.y);
-			userDefineMaxLength.add(event.point);
-		}else{
 
-			path.strokeColor = 'red';
-			path.strokeWidth = 2;
-			// SRLlib add a new Stroke object and initial starting point
-			stroke = new srlib.core.data.container.Stroke();
-			point = new srlib.core.data.container.Point(event.point.x,event.point.y)
-			if (typeof sketch == "undefined") {
-				sketch = new srlib.core.data.container.Sketch();
+			// Define a mousedown and mousedrag handler
+			tool.onMouseDown = function (event) {
+				// PaperJS add a new Path object and initial starting point
+				//path = new Path();
+				if (strokeCount == 0) {
+					userDefineMaxLength.strokeColor = 'black';
+					userDefineMaxLength.strokeWidth = 2;
+					maxLength1 = new srlib.core.data.container.Point(event.point.x, event.point.y);
+					userDefineMaxLength.add(event.point);
+				} else {
+					path.strokeColor = 'red';
+					path.strokeWidth = 2;
+					// SRLlib add a new Stroke object and initial starting point
+					stroke = new srlib.core.data.container.Stroke();
+					point = new srlib.core.data.container.Point(event.point.x, event.point.y)
+					if (!sketch) {
+						sketch = new srlib.core.data.container.Sketch();
+					}
+					sketch.addStroke(stroke);
+					sketch.addPoint(point);
+					stroke.addPoint(point);
+
+				}
+
 			}
-			sketch.addStroke(stroke);
-			sketch.addPoint(point);
-			stroke.addPoint(point);
+			tool.onMouseUp = function (event) {
+				if (strokeCount == 0) {
+					strokeCount++;
+					maxLength2 = new srlib.core.data.container.Point(event.point.x, event.point.y);
+					userDefineMaxLength.add(event.point);
+					document.getElementById('questionlabel').innerHTML = 'Trace outline';
+				}
+			}
+
+			tool.onMouseDrag = function (event) {
+				// PaperJS add points to Path object on mouse drag
+				if (strokeCount != 0) {
+					path.add(event.point);
+
+					// SRLlib add points to Stroke on mouse drag
+					point = new srlib.core.data.container.Point(event.point.x, event.point.y);
+					sketch.addPoint(point);
+					stroke.addPoint(point);
+				}
+			}
+		}
+
+
+	function setBackground() {
+			var x = document.getElementById("myFile").value;
+			var name = x.split("\\");
+			console.log(name[name.length - 1]);
+			document.getElementById("myCanvas").style.backgroundImage = "url(" + name[name.length - 1] + ")";
+			inputSpecie = name[name.length - 1];
+			(path)?path.remove():"";
+			userDefineMaxLength?userDefineMaxLength.remove():"";
+			centroidCircle?centroidCircle.remove():"";
+			sketch?sketch=null:'';
+			stroke?stroke=null:'';
+			userDefineMaxLength= new Path();
+			path= new Path();
+			strokeCount=0;
+			document.getElementById('output').innerHTML = '';
 			
+			//paper.setup('myCanvas');
 		}
-		
-	}
-		tool.onMouseUp = function(event){
-			if (strokeCount == 0){
-			strokeCount++;
-			maxLength2 = new srlib.core.data.container.Point(event.point.x, event.point.y);
-			userDefineMaxLength.add(event.point);
-			document.getElementById('questionlabel').innerHTML = 'Trace outline';
-		    }
+		function process() {
+			newSketch = new srlib.core.data.container.Sketch();  //Shows the origin (x,y)= (0,0) which is at the top left corner
+			document.getElementById('questionlabel').innerHTML = 'Draw inner parts';
+			findIfClosedSketch(sketch);
+			points = [];
+			for (var keypoint in sketch.getPoints()) {
+				points.push(sketch.getPoints()[keypoint]);
+			}
+			for (var j = 1; j < points.length; j++) {
+				if (points[j].getX() == points[j - 1].getX() && points[j].getY() == points[j - 1].getY()) {
+					points.splice(j, 1);
+					j = j - 1;
+				}
+			}
+			var deltaX = [];
+			var deltaY = [];
+			var theta = [];
+
+			initializeDelta(deltaX, deltaY, points);
+			initializeTheta(deltaX, deltaY, theta);
+
+			var rotation = 0.0;
+			var smoothness = 0.0;
+			var sharpness = 0.0;
+
+			for (var j = 0; j < theta.length; j++) {
+
+				rotation = rotation + theta[j];
+				smoothness = smoothness + Math.abs(theta[j]);
+				sharpness = sharpness + Math.pow(theta[j], 2);
+
+
+			}
+			maxpoints = [maxLength1, maxLength2];
+			centroid = findCentroid(sketch);
+			centroidCircle = new Path.Circle(new Point(centroid.getX(), centroid.getY()), 20);
+			centroidCircle.strokeColor = 'red';
+			newEverything = rotateOutline(sketch, maxpoints, centroid);
+			newSketch = newEverything[0];
+			newmaxpoints = [newEverything[1], newEverything[2]];
+			newCentroid = findCentroid(newSketch);
+			var newPoints = [];
+			var topStrokeLength = 0;
+			var botStrokeLength = 0;
+			for (var key in newSketch.getPoints()) {
+				var curr = newSketch.getPoints()[key];
+				newPoints.push(curr);
+			}
+
+			var totalStrokeLength = 0;
+
+
+
+
+
+			for (var j = 0; j < newPoints.length - 1; j++) {
+				totalStrokeLength = totalStrokeLength + newPoints[j].distance(newPoints[j + 1]);
+				if (newPoints[j].getY() < newmaxpoints[0].getY()) {
+					topStrokeLength = topStrokeLength + newPoints[j].distance(newPoints[j + 1]);
+				} else {
+					botStrokeLength = botStrokeLength + newPoints[j].distance(newPoints[j + 1]);
+				}
+			}
+
+			strokesInHalves = findHalves(newSketch, newmaxpoints, newCentroid);
+			pointWhereMax = findVerticalDistancesAlternative(newSketch, newCentroid, newmaxpoints);
+			var index = pointWhereMax[1];
+			var ratio = newmaxpoints[0].distance(newmaxpoints[1]) / pointWhereMax[2];
+			var topLengthRatio = topStrokeLength / newmaxpoints[0].distance(newmaxpoints[1]);
+			var botLengthRatio = botStrokeLength / newmaxpoints[0].distance(newmaxpoints[1]);
+			var topBotRatio = topStrokeLength / botStrokeLength;
+			console.log(rotation + "," + smoothness + "," + sharpness + "," + ratio + "," + pointWhereMax[3] + "," + topLengthRatio + ","
+				+ botLengthRatio + "," + topBotRatio + "," + "L");
+
+
+			var classification = predict(smoothness, sharpness, ratio, pointWhereMax[3], topLengthRatio, botLengthRatio, topBotRatio);
+
+			console.log(classification);
+
+			var lessCurvedSide = getLessCurvatureSide(newmaxpoints, strokesInHalves);
+			console.log(lessCurvedSide);
+			var valveSide;
+
+			if (pointWhereMax[0].getX() > newCentroid.getX()) {
+				valveSide = "Right";
+			} else {
+				valveSide = "Left";
+			}
+
+			var outputString = "\n \n \n \n \n \n Input:" + inputSpecie + "\n" + "Output: \n" + "\n Valve:" + valveSide + "\n Calssified Species:" + classification;
+			document.getElementById('output').innerHTML = outputString;
 		}
 
-		tool.onMouseDrag = function(event) {
-			// PaperJS add points to Path object on mouse drag
-		if (strokeCount != 0){
-		path.add(event.point);
 
-	// SRLlib add points to Stroke on mouse drag
-		point = new srlib.core.data.container.Point(event.point.x,event.point.y);
-		//count++;
-		sketch.addPoint(point);
-		stroke.addPoint(point);
-		
-		//console.log(count);
-		}
-		
+		function getTopBottom() {
+			//TO DO!!!!!!!!!!!!!!!!!!!
+			/*
+			*Idea: Since we already have correct maximum length, I was thinking
+			*	that maybe we can take the mid 2/3 (that is to exclude the left and right 1/6),
+			*   and calculate the ratio of top path length over 2/3 of max length, and
+			*	that of bottom as well, and compare
+			* 	Since top is almost always convex, and bottom is straighter (most of the time),
+			*	top ratio will be larger than bottom ratio
+			*/
 		}
 
+		function predict(smoothness, sharpness, ratio, maxLengthRatio, topLengthRatio, botLengthRatio, topBotRatio) {
 
-		
-	}
+			var probEC = -36.373285 + 0.16206998 * sharpness + 46.042491 * ratio - 12.83812 * maxLengthRatio + 4.724668 * topLengthRatio - 60.99577 * botLengthRatio + 20.94821 * topBotRatio;
+			probEC = Math.exp(probEC);
+			var probL = 2.473576 - 0.08435574 * sharpness + 70.054086 * ratio - 27.68299 * maxLengthRatio - 45.096235 * topLengthRatio + 21.57071 * botLengthRatio - 47.91339 * topBotRatio;
+			probL = Math.exp(probL);
+			var probCN = 43.920487 - 0.0542765 * sharpness - 1.571042 * ratio - 59.08888 * maxLengthRatio - 37.920384 * topLengthRatio + 94.12266 * botLengthRatio - 53.87436 * topBotRatio;
+			probCN = Math.exp(probCN);
 
-	function process(){
-		newSketch= new srlib.core.data.container.Sketch();  //Shows the origin (x,y)= (0,0) which is at the top left corner
-		document.getElementById('questionlabel').innerHTML = 'Draw inner parts';
-		findIfClosedSketch(sketch);
-		points=[];
-		for (var keypoint in sketch.getPoints()) {
-			points.push(sketch.getPoints()[keypoint]);
-		}
-		//console.log(points.length);
-		for (var j = 1; j < points.length; j++){
-			if (points[j].getX()==points[j-1].getX()&&points[j].getY()==points[j-1].getY()){
-				points.splice(j,1);
-				j = j-1;
+			var EC = probEC / (probL + probCN + 1);
+			var L = probL / (probEC + probCN + 1);
+			var CN = probCN / (probEC + probL + 1);
+			var BE = 1 - EC - L - CN;
+			console.log(EC);
+			console.log(BE);
+			console.log(CN);
+			console.log(L);
+			console.log(EC + BE + CN + L);
+			var maxProb = Math.max(EC, BE, CN, L);
+			if (maxProb == EC) {
+				return "Elofsonella Concinna";
+			} else if (maxProb == BE) {
+				return "Baffinicythere Emarginata";
+			} else if (maxProb == CN) {
+				return "Cytheropteron Nodosoalatum";
+			} else {
+				return "Leptocythere";
 			}
 
 		}
 
- 		var deltaX = [];
- 		var deltaY = [];
- 		var theta = [];
-
- 		initializeDelta(deltaX, deltaY, points);
- 		initializeTheta(deltaX,deltaY,theta);		
-
- 		 // for (var j = 0; j < theta.length; j++){
- 		 // 	console.log(theta[j]);
- 		 // }
-
- 		var rotation = 0.0;
- 		var smoothness = 0.0;
- 		var sharpness = 0.0;
-
- 		for (var j = 0; j < theta.length; j++){
- 			
- 			rotation = rotation + theta[j];
- 			smoothness = smoothness+Math.abs(theta[j]);
- 			sharpness = sharpness + Math.pow(theta[j],2);
- 			
- 		
- 		}
- 		
-
-		maxpoints=[maxLength1,maxLength2];
-		
-		centroid=findCentroid(sketch);	
-		var centroidCircle = new Path.Circle(new Point(centroid.getX(),centroid.getY()), 20);
-        centroidCircle.strokeColor = 'red';
-
-		newEverything= rotateOutline(sketch,maxpoints, centroid);
-		newSketch = newEverything[0];
-		newmaxpoints = [newEverything[1],newEverything[2]];
-		newCentroid=findCentroid(newSketch);
-		var newPoints = [];
-		
-		var topStrokeLength = 0;
-		var botStrokeLength = 0;
-		//console.log(newmaxpoints[0].getY());
-		for (var key in newSketch.getPoints()){
-			var curr = newSketch.getPoints()[key];
-			//console.log(curr);
-			newPoints.push(curr);
-			
-		}
-
-		//console.log(newPoints);
-		var totalStrokeLength = 0;
-
-
-		
-
-
-		for (var j = 0; j < newPoints.length-1; j++){
-			//console.log(newPoints[j].distance(newPoints[j+1]));
-			totalStrokeLength = totalStrokeLength + newPoints[j].distance(newPoints[j+1]);
-			if (newPoints[j].getY()<newmaxpoints[0].getY()){
-				topStrokeLength = topStrokeLength+newPoints[j].distance(newPoints[j+1]);
-			}else{
-				botStrokeLength = botStrokeLength+newPoints[j].distance(newPoints[j+1]);
+		function initializeDelta(deltaX, deltaY, points) {
+			for (var i = 0; i < points.length - 1; i++) {
+				var dX = points[i + 1].getX() - points[i].getX();
+				var dY = points[i + 1].getY() - points[i].getY();
+				deltaX.push(dX);
+				deltaY.push(dY);
 			}
 		}
-		// console.log("topStrokeLength: "+topStrokeLength);
-		// console.log("botStrokeLength: "+botStrokeLength);
-		// console.log("totalStrokeLength: "+totalStrokeLength);
-		
-		strokesInHalves= findHalves(newSketch,newmaxpoints, newCentroid);
-		//strokesInHalves = getHalves(newSketch, newmaxpoints);
-		//console.log(strokesInHalves[0]);
-		
-		pointWhereMax = findVerticalDistancesAlternative(newSketch,newCentroid,newmaxpoints);
-		
 
+		function initializeTheta(deltaX, deltaY, theta) {
+			for (var i = 1; i < deltaX.length; i++) {
+				if (deltaX[i] * deltaX[i - 1] + deltaY[i] * deltaY[i - 1] != 0) {
+					var rotation = Math.atan((deltaX[i] * deltaY[i - 1] - deltaX[i - 1] * deltaY[i]) /
+						(deltaX[i] * deltaX[i - 1] + deltaY[i] * deltaY[i - 1]));
+					theta.push(rotation);
+				}
+			}
 
-		var index = pointWhereMax[1];
-		/*var maxCircle = new Path.Circle(new Point(points[index].getX(), points[index].getY()), 20);
-        maxCircle.strokeColor = 'blue';*/
-
-        var ratio = newmaxpoints[0].distance(newmaxpoints[1])/pointWhereMax[2];
-        var topLengthRatio = topStrokeLength/newmaxpoints[0].distance(newmaxpoints[1]);
-        var botLengthRatio = botStrokeLength/newmaxpoints[0].distance(newmaxpoints[1]);
-        var topBotRatio = topStrokeLength/botStrokeLength;
-
-
-        
-        // console.log("lengthRatio: "+pointWhereMax[3]);
-        // console.log("heightRatio: "+pointWhereMax[4]);
-        console.log(rotation+","+smoothness+","+sharpness+","+ratio+","+pointWhereMax[3]+"," +topLengthRatio+","
-        	+botLengthRatio+","+topBotRatio+","+"L");
-
-
-        var classification = predict(smoothness, sharpness, ratio, pointWhereMax[3],topLengthRatio,botLengthRatio, topBotRatio);
-
-        console.log(classification);
-		
-				
-		// var f1 = calculateTotalRotation;
-		// var f2 = calculateSmootheness;
-		// var f3 = calculateSharpness;
-		var lessCurvedSide = getLessCurvatureSide(newmaxpoints,strokesInHalves);
-		console.log(lessCurvedSide);
-		var valveSide;
-
-		if(pointWhereMax[0].getX()>newCentroid.getX()){
-			valveSide="Right";
-			/*document.getElementById('consolelabel').innerHTML = 'It is a right valve';*/
-		}else{
-			valveSide="Left";
-			/*document.getElementById('consolelabel').innerHTML = 'It is a left valve';*/
 		}
-		
-		var outputString= "\n \n \n \n \n \n Input:" +inputSpecie+"\n"+"Output: \n" + "\n Valve:"+ valveSide +"\n Calssified Species:" +classification;
-		document.getElementById('output').innerHTML = outputString;
-	}
-		
-		//I changed if statement, originally it is centroid.getX()
-	
 
-	function getTopBottom(){
-		//TO DO!!!!!!!!!!!!!!!!!!!
+
+
+
+
+
+
+		function getLessCurvatureSide(newmaxpoints, strokesInHalves) {
+			var maxHorizontalDistance = newmaxpoints[0].distance(newmaxpoints[1]);
+			var upper = strokesInHalves[0].getPoints();
+			var lower = strokesInHalves[1].getPoints();
+			var leftPointX;
+			var rightPointX;
+			if (newmaxpoints[0].getX() < newmaxpoints[1].getX()) {
+				leftPointX = newmaxpoints[0].getX();
+				rightPointX = newmaxpoints[1].getX();
+			} else {
+				rightPointX = newmaxpoints[0].getX();
+				leftPointX = newmaxpoints[1].getX();
+			}
+			var delta = maxHorizontalDistance * 0.05;
+			leftPointX = leftPointX + delta;
+			rightPointX = rightPointX - delta;
+			var upperLeft = getApproxXCoordinate(upper, leftPointX);
+			var upperRight = getApproxXCoordinate(upper, rightPointX);
+			var lowerLeft = getApproxXCoordinate(lower, leftPointX);
+			var lowerRight = getApproxXCoordinate(lower, rightPointX);
+			var leftDist = upperLeft.distance(lowerLeft);
+			var rightDist = upperRight.distance(lowerRight);
+
+			if (leftDist > rightDist) {
+				return "Left";
+			} else {
+				return "Right";
+			}
+
+		}
+
+		function getApproxXCoordinate(halfPoints, x) {
+			var minDelta = Number.MAX_VALUE;
+			var minX = new srlib.core.data.container.Point();
+			for (j in halfPoints) {
+				currDelta = Math.abs(halfPoints[j].getX() - x);
+				if (currDelta < minDelta) {
+					minDelta = currDelta;
+					//console.log(minDelta);
+					minX = halfPoints[j];
+				}
+			}
+			//console.log(minX);
+			return minX;
+		}
+
 		/*
-		*Idea: Since we already have correct maximum length, I was thinking
-		*	that maybe we can take the mid 2/3 (that is to exclude the left and right 1/6),
-		*   and calculate the ratio of top path length over 2/3 of max length, and
-		*	that of bottom as well, and compare
-		* 	Since top is almost always convex, and bottom is straighter (most of the time),
-		*	top ratio will be larger than bottom ratio
+		*Take the horizontal line going throung centroid as reference, calculating the distance squared from the upper half
+		*to the reference line. 
 		*/
-	}
-
-	function predict(smoothness, sharpness, ratio, maxLengthRatio,topLengthRatio,botLengthRatio, topBotRatio){
-
-		var probEC = -36.373285+0.16206998*sharpness+46.042491*ratio-12.83812*maxLengthRatio+4.724668*topLengthRatio-60.99577*botLengthRatio+20.94821*topBotRatio;
-		probEC = Math.exp(probEC);
-		var probL = 2.473576-0.08435574*sharpness+70.054086*ratio-27.68299*maxLengthRatio-45.096235*topLengthRatio+21.57071*botLengthRatio-47.91339*topBotRatio;
-		probL = Math.exp(probL);
-		var probCN = 43.920487-0.0542765*sharpness-1.571042*ratio-59.08888*maxLengthRatio-37.920384*topLengthRatio+94.12266*botLengthRatio-53.87436*topBotRatio;
-		probCN = Math.exp(probCN);
-		
-		var EC = probEC/(probL+probCN+1);
-		var L = probL/(probEC+probCN+1);
-		var CN = probCN/(probEC+probL+1);
-		var BE = 1-EC-L-CN;
-		console.log(EC);
-		console.log(BE);
-		console.log(CN);
-		console.log(L);
-		console.log(EC+BE+CN+L);
-		var maxProb = Math.max(EC,BE,CN,L);
-		if (maxProb==EC){
-			return "Elofsonella Concinna";
-		}else if (maxProb==BE){
-			return "Baffinicythere Emarginata";
-		}else if (maxProb==CN){
-			return "Cytheropteron Nodosoalatum";
-		}else{
-			return "Leptocythere";
-		}
-
-}
-
-	function initializeDelta(deltaX, deltaY, points){
-		for (var i = 0; i < points.length-1; i++){
-			var dX = points[i+1].getX() - points[i].getX();
-			var dY = points[i+1].getY() - points[i].getY();
-			deltaX.push(dX);
-			deltaY.push(dY);
-		}
-	}
-
-	function initializeTheta(deltaX, deltaY, theta){
-		for (var i = 1; i < deltaX.length; i++){
-			if (deltaX[i]*deltaX[i-1]+deltaY[i]*deltaY[i-1]!=0){
-				var rotation = Math.atan((deltaX[i]*deltaY[i-1]-deltaX[i-1]*deltaY[i])/
-							(deltaX[i]*deltaX[i-1]+deltaY[i]*deltaY[i-1]));
-				theta.push(rotation);
+		function findVerticalDistancesAlternative(newSketch, referencePoint, newmaxpoints) {
+			pointList = [];
+			var otherHalf = [];
+			var maxHeight = 0;
+			for (var keypoint in newSketch.getPoints()) {
+				pointList.push(newSketch.getPoints()[keypoint]);
 			}
-			//console.log(rotation);
-			//theta.push(rotation);
-		}
+			var maxPoint = new srlib.core.data.container.Point();
+			var oneHalfPoints = [];
+			var maxVerticalDistanceS = 0;
+			var verticalDistanceS = 0;
+			var index = 0;
+			for (j in pointList) {
+				if (pointList[j].getY() < referencePoint.getY()) {
+					verticalDistanceS = pointList[j].distanceSquared(pointList[j].getX(), referencePoint.getY());
+					if (verticalDistanceS > maxVerticalDistanceS) {
+						maxVerticalDistanceS = verticalDistanceS;
+						maxPoint = pointList[j];
+						index = j;
 
-	}
+					}
+				} else {
+					otherHalf.push(pointList[j]);
 
-	
-	
-
-
-
-	//get rounder side, in case for the special example Anna showed us
-	function getLessCurvatureSide(newmaxpoints,strokesInHalves){
-		var maxHorizontalDistance = newmaxpoints[0].distance(newmaxpoints[1]);
-		var upper = strokesInHalves[0].getPoints();
-		var lower = strokesInHalves[1].getPoints();
-		//console.log(upper[0]);
-		var leftPointX;
-		var rightPointX;
-		if (newmaxpoints[0].getX() < newmaxpoints[1].getX()){
-			leftPointX = newmaxpoints[0].getX();
-			rightPointX = newmaxpoints[1].getX();
-		}else{
-			rightPointX = newmaxpoints[0].getX();
-			leftPointX = newmaxpoints[1].getX();
-		}
-		var delta = maxHorizontalDistance*0.05;
-		leftPointX = leftPointX + delta;
-		rightPointX = rightPointX - delta;
-		//console.log(leftPointX);
-		var upperLeft = getApproxXCoordinate(upper, leftPointX);
-		var upperRight = getApproxXCoordinate(upper, rightPointX);
-		var lowerLeft = getApproxXCoordinate(lower, leftPointX);
-		var lowerRight = getApproxXCoordinate(lower, rightPointX);
-		var leftDist = upperLeft.distance(lowerLeft);
-		var rightDist = upperRight.distance(lowerRight);
-	
-		if (leftDist > rightDist){
-			return "Left";
-		}else{
-			return "Right";
-		}
-
-	}
-
-	function getApproxXCoordinate(halfPoints, x){
-		var minDelta = Number.MAX_VALUE;
-		var minX = new srlib.core.data.container.Point(); 
-		for (j in halfPoints){
-			currDelta = Math.abs(halfPoints[j].getX()-x);
-			if (currDelta < minDelta){
-				minDelta = currDelta;
-				//console.log(minDelta);
-				minX = halfPoints[j];
-			}
-		}
-		//console.log(minX);
-		return minX;
-	}
-	
-	/*
-	*Take the horizontal line going throung centroid as reference, calculating the distance squared from the upper half
-	*to the reference line. 
-	*/
-	function findVerticalDistancesAlternative(newSketch,referencePoint,newmaxpoints){
-		pointList=[];
-		var otherHalf = [];
-		var maxHeight = 0; 
-	    for (var keypoint in newSketch.getPoints()) {
-			pointList.push(newSketch.getPoints()[keypoint]);
-		}
-		var maxPoint = new srlib.core.data.container.Point();
-		var oneHalfPoints = [];
-		var maxVerticalDistanceS = 0; 
-		var verticalDistanceS = 0;
-		var index = 0;
-		for (j in pointList) {
-			if (pointList[j].getY() < referencePoint.getY()){
-				verticalDistanceS = pointList[j].distanceSquared(pointList[j].getX(),referencePoint.getY());
-				if (verticalDistanceS > maxVerticalDistanceS){
-					maxVerticalDistanceS = verticalDistanceS;
-					maxPoint = pointList[j];
-					index = j;
-					
-				}
-			}else{
-				otherHalf.push(pointList[j]);
-				
 				}
 
-		}
-		/*var maxCircle = new Path.Circle(new Point(maxPoint.getX(), maxPoint.getY()), 20);
-       				 maxCircle.strokeColor = 'blue';*/
-		var otherPoint = getApproxXCoordinate(otherHalf, maxPoint.getX());
-		var y1 = newmaxpoints[0].getY();
-		var y2 = maxPoint.getY();
-		var y3 = otherPoint.getY();
-		var maxLengthRatio = Math.abs((y1-y2)/(y2-y3));
-		var x1 = newmaxpoints[0].getX();
-		var x2 = newmaxpoints[1].getX();
-		var x3 = maxPoint.getX();
-		var maxHeightRatio = Math.abs((x3-x1)/(x2-x1));
-		maxHeight = maxPoint.distance(otherPoint);
-		return [maxPoint,index,maxHeight,maxLengthRatio,maxHeightRatio];
-	}
-
-	function minXdifference(pointFromOneHalf,secondHalfPoints){
-		minDifference=Number.MAX_VALUE;
-		minXdifferencePoint= new srlib.core.data.container.Point();
-		for(k in secondHalfPoints){
-			xDistance= Math.abs(pointFromOneHalf.getX()-secondHalfPoints[k].getX());
-			if(xDistance<minDifference){
-				minDifference=xDistance;
-				minXdifferencePoint=secondHalfPoints[k];
 			}
+			var otherPoint = getApproxXCoordinate(otherHalf, maxPoint.getX());
+			var y1 = newmaxpoints[0].getY();
+			var y2 = maxPoint.getY();
+			var y3 = otherPoint.getY();
+			var maxLengthRatio = Math.abs((y1 - y2) / (y2 - y3));
+			var x1 = newmaxpoints[0].getX();
+			var x2 = newmaxpoints[1].getX();
+			var x3 = maxPoint.getX();
+			var maxHeightRatio = Math.abs((x3 - x1) / (x2 - x1));
+			maxHeight = maxPoint.distance(otherPoint);
+			return [maxPoint, index, maxHeight, maxLengthRatio, maxHeightRatio];
+		}
+
+		function minXdifference(pointFromOneHalf, secondHalfPoints) {
+			minDifference = Number.MAX_VALUE;
+			minXdifferencePoint = new srlib.core.data.container.Point();
+			for (k in secondHalfPoints) {
+				xDistance = Math.abs(pointFromOneHalf.getX() - secondHalfPoints[k].getX());
+				if (xDistance < minDifference) {
+					minDifference = xDistance;
+					minXdifferencePoint = secondHalfPoints[k];
+				}
+
+			}
+			return minXdifferencePoint
 
 		}
-		return minXdifferencePoint
 
-	}
-
-	function rotateOutline(sketchOutline,maxPoints, centroid){
-		pointList=[];
-		newSketch= new srlib.core.data.container.Sketch();
-		outlineStroke = new srlib.core.data.container.Stroke();
+		function rotateOutline(sketchOutline, maxPoints, centroid) {
+			pointList = [];
+			newSketch = new srlib.core.data.container.Sketch();
+			outlineStroke = new srlib.core.data.container.Stroke();
 			for (var keypoint in sketchOutline.getPoints()) {
 				pointList.push(sketchOutline.getPoints()[keypoint]);
 			}
 
-			if(maxPoints[0].getX()<centroid.getX()){
-						leftMax=maxPoints[0];
-						rightMax=maxPoints[1];
+			if (maxPoints[0].getX() < centroid.getX()) {
+				leftMax = maxPoints[0];
+				rightMax = maxPoints[1];
 
-				}else{
-					leftMax=maxPoints[1];
-					rightMax=maxPoints[0];
+			} else {
+				leftMax = maxPoints[1];
+				rightMax = maxPoints[0];
 
-				}			
-			/*var rightCircle = new Path.Circle(new Point(rightMax.getX(), rightMax.getY()), 20);
-            rightCircle.strokeColor = 'blue';*/
-			angleOfRotation= Math.atan((leftMax.getY()-rightMax.getY())/(leftMax.getX()-rightMax.getX()));
-
-		/*	var newPath= new Path();
-			newPath.strokeColor='red';
-*/			for (var key in pointList) {
-				newX=pointList[key].getX()*Math.cos(-angleOfRotation)-pointList[key].getY()*Math.sin(-angleOfRotation);
-				newY=pointList[key].getY()*Math.cos(-angleOfRotation)+pointList[key].getX()*Math.sin(-angleOfRotation);
-				outlineStroke.addPoint(new srlib.core.data.container.Point(newX,newY));
-				newSketch.addPoint(new srlib.core.data.container.Point(newX,newY));
+			}
+			angleOfRotation = Math.atan((leftMax.getY() - rightMax.getY()) / (leftMax.getX() - rightMax.getX()));
+			for (var key in pointList) {
+				newX = pointList[key].getX() * Math.cos(-angleOfRotation) - pointList[key].getY() * Math.sin(-angleOfRotation);
+				newY = pointList[key].getY() * Math.cos(-angleOfRotation) + pointList[key].getX() * Math.sin(-angleOfRotation);
+				outlineStroke.addPoint(new srlib.core.data.container.Point(newX, newY));
+				newSketch.addPoint(new srlib.core.data.container.Point(newX, newY));
 				//newPath.add( new Point(newX,newY));
 
 			}
-			var newmaxHeight1X = maxLength1.getX() *Math.cos(-angleOfRotation)-maxLength1.getY()*Math.sin(-angleOfRotation);
-			var newmaxHeight1Y = maxLength1.getY()*Math.cos(-angleOfRotation)+maxLength1.getX()*Math.sin(-angleOfRotation);
-			var newmaxHeight2X = maxLength2.getX() *Math.cos(-angleOfRotation)-maxLength2.getY()*Math.sin(-angleOfRotation);
-			var newmaxHeight2Y = maxLength2.getY()*Math.cos(-angleOfRotation)+maxLength2.getX()*Math.sin(-angleOfRotation);
-			// console.log(newmaxHeight1X);
-			// console.log(newmaxHeight1Y);
-			var newMaxHeight1 = new srlib.core.data.container.Point(newmaxHeight1X,newmaxHeight1Y);
-			var newMaxHeight2 = new srlib.core.data.container.Point(newmaxHeight2X,newmaxHeight2Y);
-			// console.log("!!"+newMaxHeight1);
-			// console.log("!!"+newMaxHeight2);
+			var newmaxHeight1X = maxLength1.getX() * Math.cos(-angleOfRotation) - maxLength1.getY() * Math.sin(-angleOfRotation);
+			var newmaxHeight1Y = maxLength1.getY() * Math.cos(-angleOfRotation) + maxLength1.getX() * Math.sin(-angleOfRotation);
+			var newmaxHeight2X = maxLength2.getX() * Math.cos(-angleOfRotation) - maxLength2.getY() * Math.sin(-angleOfRotation);
+			var newmaxHeight2Y = maxLength2.getY() * Math.cos(-angleOfRotation) + maxLength2.getX() * Math.sin(-angleOfRotation);
+			var newMaxHeight1 = new srlib.core.data.container.Point(newmaxHeight1X, newmaxHeight1Y);
+			var newMaxHeight2 = new srlib.core.data.container.Point(newmaxHeight2X, newmaxHeight2Y);
 			newSketch.addStroke(outlineStroke);
 
 
-		return [newSketch,newMaxHeight1,newMaxHeight2];
+			return [newSketch, newMaxHeight1, newMaxHeight2];
 
-	}
+		}
 
 
 
-	function  findHalves(sketchOutline, maxPoints, centroid){
-		pointList=[];
+		function findHalves(sketchOutline, maxPoints, centroid) {
+			pointList = [];
 			for (var keypoint in sketchOutline.getPoints()) {
 				pointList.push(sketchOutline.getPoints()[keypoint]);
 			}
-			if(maxPoints[0].getX()<centroid.getX()){
-						leftMax=maxPoints[0];
-						rightMax=maxPoints[1];
+			if (maxPoints[0].getX() < centroid.getX()) {
+				leftMax = maxPoints[0];
+				rightMax = maxPoints[1];
 
-				}else{
-					leftMax=maxPoints[1];
-					rightMax=maxPoints[0];
+			} else {
+				leftMax = maxPoints[1];
+				rightMax = maxPoints[0];
 
-				}
+			}
 			strokeUpper = new srlib.core.data.container.Stroke();
 			strokeLower = new srlib.core.data.container.Stroke();
-			for(j in pointList){
-				if(pointList[j].getY()>=leftMax.getY() && pointList[j].getY()>=rightMax.getY()){
+			for (j in pointList) {
+				if (pointList[j].getY() >= leftMax.getY() && pointList[j].getY() >= rightMax.getY()) {
 					strokeUpper.addPoint(pointList[j]);
-				}else if (pointList[j].getY()<=leftMax.getY() && pointList[j].getY()<=rightMax.getY()){
+				} else if (pointList[j].getY() <= leftMax.getY() && pointList[j].getY() <= rightMax.getY()) {
 					strokeLower.addPoint(pointList[j]);
-				}else{
-					if(pointList[j].getY()>=leftMax.getY()){
-						if(pointList[j].getX()<centroid.getX()){
+				} else {
+					if (pointList[j].getY() >= leftMax.getY()) {
+						if (pointList[j].getX() < centroid.getX()) {
 							strokeUpper.addPoint(pointList[j]);
-						}else{
+						} else {
 							strokeLower.addPoint(pointList[j]);
-						}						
-					}else {
+						}
+					} else {
 
-						if(pointList[j].getX()<centroid.getX()){
+						if (pointList[j].getX() < centroid.getX()) {
 							strokeLower.addPoint(pointList[j]);
-						}else{
+						} else {
 							strokeUpper.addPoint(pointList[j]);
-						}	
+						}
 					}
-				}				
+				}
 			}
-			return [strokeUpper,strokeLower]			
-	}
+			return [strokeUpper, strokeLower]
+		}
 
-	function findCentroid(sketchOutline){
-		pointList=[];
-		sumx=0;
-		sumy=0;	
+		function findCentroid(sketchOutline) {
+			pointList = [];
+			sumx = 0;
+			sumy = 0;
 			for (var keypoint in sketchOutline.getPoints()) {
 				pointList.push(sketchOutline.getPoints()[keypoint]);
 			}
-			for(j in pointList){
-				sumx=sumx+pointList[j].getX();
-				sumy=sumy+pointList[j].getY();
+			for (j in pointList) {
+				sumx = sumx + pointList[j].getX();
+				sumy = sumy + pointList[j].getY();
 			}
-			centroid= new srlib.core.data.container.Point((sumx/j),(sumy/j));
-			/* var centroidCircle = new Path.Circle(new Point((sumx/j), (sumy/j)), 20);
-             centroidCircle.strokeColor = 'red';*/
-            return centroid
-	}
+			centroid = new srlib.core.data.container.Point((sumx / j), (sumy / j));
+			return centroid
+		}
 
 
-	function findMaxLength(sketchOutline){
-			pointList=[];	
+		function findMaxLength(sketchOutline) {
+			pointList = [];
 			for (var keypoint in sketchOutline.getPoints()) {
 				pointList.push(sketchOutline.getPoints()[keypoint]);
 			}
-			maxPoint1=  new srlib.core.data.container.Point();
-			maxPoint2=  new srlib.core.data.container.Point();
-			maxDistance=0;
-			for(j in pointList){
-				for(k in pointList){
-					distanceNow=pointList[j].distance(pointList[k]);
-					if(distanceNow>maxDistance){
-						maxPoint1=pointList[j];
-						maxPoint2=pointList[k];
-						maxDistance=distanceNow;
+			maxPoint1 = new srlib.core.data.container.Point();
+			maxPoint2 = new srlib.core.data.container.Point();
+			maxDistance = 0;
+			for (j in pointList) {
+				for (k in pointList) {
+					distanceNow = pointList[j].distance(pointList[k]);
+					if (distanceNow > maxDistance) {
+						maxPoint1 = pointList[j];
+						maxPoint2 = pointList[k];
+						maxDistance = distanceNow;
 					}
 				}
 
 			}
-			 var from = new Point(maxPoint1.getX(), maxPoint1.getY());
-			 var to = new Point(maxPoint2.getX(), maxPoint2.getY());
-			 var horizontalLine = new Path.Line(from, to);
-             horizontalLine.strokeColor = 'black';
-            return [maxPoint1, maxPoint2]
-	}
+			var from = new Point(maxPoint1.getX(), maxPoint1.getY());
+			var to = new Point(maxPoint2.getX(), maxPoint2.getY());
+			var horizontalLine = new Path.Line(from, to);
+			horizontalLine.strokeColor = 'black';
+			return [maxPoint1, maxPoint2]
+		}
 
-	function drawLength(sketchOutline){		
+		function drawLength(sketchOutline) {
 			//newsketch=formOutline(sketch);
-			strokeList=[];
+			strokeList = [];
 			for (var keys in sketchOutline.getStrokes()) {
 				strokeList.push(sketchOutline.getStrokes()[keys]);
 			}
-			boundingBox = new srlib.core.data.container.BoundingBox(strokeList);		
-			extremeRight=boundingBox.getCenterRightPoint();
-			extremeLeft=boundingBox.getCenterLeftPoint();
+			boundingBox = new srlib.core.data.container.BoundingBox(strokeList);
+			extremeRight = boundingBox.getCenterRightPoint();
+			extremeLeft = boundingBox.getCenterLeftPoint();
 			var from = new Point(extremeRight.getX(), extremeRight.getY());
 			var to = new Point(extremeLeft.getX(), extremeLeft.getY());
 			var path = new Path.Line(from, to);
-            path.strokeColor = 'black';
-	}
-	
-
-	function findIfClosedSketch(sketchOutline){
-		var currStrokeNo=0;
-		startPoint=[];
-		endPoint=[];
-		for (var key in sketchOutline.getStrokes()) {
-			var points = sketchOutline.getStrokes()[key].getPoints();
-			startPoint[currStrokeNo]=points[0];
-			endPoint[currStrokeNo]=points[points.length-1];
-			if(currStrokeNo!=0){
-					if(startPoint[currStrokeNo].distance(endPoint[currStrokeNo-1])>20){
-					console.log(startPoint[currStrokeNo].distance(endPoint[currStrokeNo-1]));
-					//document.getElementById('consolelabel').innerHTML = 'The outline is not a closed shape';
-				}
-			}
-			currStrokeNo++;
-		}
-		if(currStrokeNo==1){  // single stroke 
-			if(startPoint[0].distance(endPoint[0])>20){
-					//document.getElementById('consolelabel').innerHTML = 'The outline is not a closed shape';
-				}
-		}else{
-			if(startPoint[0].distance(endPoint[currStrokeNo-1])>20){
-					//document.getElementById('consolelabel').innerHTML = 'The outline is not a closed shape';
-				}
-		}
-	}
-
-	function printStroke(stroke){
-		var printStroke = new Path();
-		printStroke.strokeColor = new Color(Math.round(Math.random()),Math.round(Math.random()), Math.round(Math.random()));
-		for(keypoints in stroke.getPoints()){
-     				printStroke.add(new Point(stroke.getPoints()[keypoints].getX(), stroke.getPoints()[keypoints].getY()));
-     	}
-	}
-
-	function printStrokes(strokeList){
-		i=1;		
-		for (keys in strokeList){
-			var path = new Path();
-			console.log(keys);
-			if(i==1){
-				path.strokeColor = new Color(1, 1, 1);
-			}else{
-				path.strokeColor = new Color(1, 0, 1);
-			}
-			i=i*-1;
-     		for(keypoints in strokeList[keys].getPoints()){
-     				path.add(new Point(strokeList[keys].getPoints()[keypoints].getX(), strokeList[keys].getPoints()[keypoints].getY()));
-     		}
-		
-
-		}
-	}
-function resampleSpacing(points){
-		var topLeftX = points[0].getX();
-		var topLeftY = points[0].getY();
-		var botRightX = points[0].getX();
-		var botRightY = points[0].getY();
-		for (var i = 0; i < points.length; i++){
-			if (points[i].getX() <= topLeftX){
-				topLeftX = points[i].getX();
-			}
-			if (points[i].getY() <= topLeftY){
-				topLeftY = points[i].getY();
-			}
-			if (points[i].getX() >= botRightX){
-				botRightX = points[i].getX();
-			}
-			if (points[i].getY() >= botRightY){
-				botRightY = points[i].getY();
-			}
-		}
-		var diagonal = Math.sqrt(Math.pow((topLeftX-botRightX),2)+Math.pow((topLeftY - botRightY),2));
-		//console.log(diagonal);
-		return diagonal/40;
-	}
-
-
-
-	function resamplePoints(points,pointsCopy,S){
-		var D = 0;
-		var resampled = [points[0]];
-		var origIndex = [0];
-		for (var i = 1; i < points.length; i++){
-			var d = points[i-1].distance(points[i],0);
-			if (D+d >= S){
-				var x = points[i-1].getX()+((S-D)/d)*(points[i].getX()-points[i-1].getX());
-				var y = points[i-1].getY()+((S-D)/d)*(points[i].getY()-points[i-1].getY());
-				var q = new srlib.core.data.container.Point(x,y,points[i].getTime(),0);
-				resampled.push(q);
-				D = 0
-				//points[i].setX(x);
-				//points[i].setY(y);
-				//console.log(pointsCopy[i].getTime());
-				points.splice(i,0,q);
-				//pointsCopy.splice(i,1,q)
-				//console.log("???");
-				origIndex.push(i);
-			}
-			else{
-				D = D + d;
-			}
-		}
-		return [resampled,origIndex];
-
-	}
-
-
-
-	function getCorners(points){
-		var corners = [];
-		var straws = [];
-		var strawsValue = [];
-		corners.push(0); //the beginning of the stroke
-		W = 7;
-		for (var i = W; i < points.length-W; i++){
-			//console.log(points[i+W]);
-			var distance = points[i-W].distance(points[i+W]);
-			//console.log(distance);
-			straws[i]=distance;
-
-			strawsValue.push(distance);
+			path.strokeColor = 'black';
 		}
 
 
-		var strawsCopy = strawsValue.slice();
-		strawsCopy.sort(function(a,b){return a - b;});
-		//console.log("straw length"+straws.length);
-		//console.log(straws);
-		//console.log(strawsCopy);
-		var t = 0;
-		var middle = Math.floor((strawsCopy.length - 1) / 2); // NB: operator precedence
-    	if (strawsCopy.length % 2) {
-        	t= 0.90*strawsCopy[middle];
-    	} else {
-       	 	t=0.90*(strawsCopy[middle] + strawsCopy[middle + 1]) / 2.0;
-    	}
-
-		//console.log("t: "+t);
-
-		for (var i = W; i < points.length-W; i++){
-			if (straws[i]<t){
-				var localMin = Infinity;
-				var localMinIndex = i;
-				while (i < points.length-W && straws[i] < t){
-					if (straws[i]<localMin){
-						localMin = straws[i];
-						localMinIndex = i;
+		function findIfClosedSketch(sketchOutline) {
+			var currStrokeNo = 0;
+			startPoint = [];
+			endPoint = [];
+			for (var key in sketchOutline.getStrokes()) {
+				var points = sketchOutline.getStrokes()[key].getPoints();
+				startPoint[currStrokeNo] = points[0];
+				endPoint[currStrokeNo] = points[points.length - 1];
+				if (currStrokeNo != 0) {
+					if (startPoint[currStrokeNo].distance(endPoint[currStrokeNo - 1]) > 20) {
+						console.log(startPoint[currStrokeNo].distance(endPoint[currStrokeNo - 1]));
 					}
-					i++;
 				}
-				corners.push(localMinIndex);
+				currStrokeNo++;
+			}
+			if (currStrokeNo == 1) {  // single stroke 
+				if (startPoint[0].distance(endPoint[0]) > 20) {
+					//document.getElementById('consolelabel').innerHTML = 'The outline is not a closed shape';
+				}
+			} else {
+				if (startPoint[0].distance(endPoint[currStrokeNo - 1]) > 20) {
+					//document.getElementById('consolelabel').innerHTML = 'The outline is not a closed shape';
+				}
 			}
 		}
 
+		function printStroke(stroke) {
+			var printStroke = new Path();
+			printStroke.strokeColor = new Color(Math.round(Math.random()), Math.round(Math.random()), Math.round(Math.random()));
+			for (keypoints in stroke.getPoints()) {
+				printStroke.add(new Point(stroke.getPoints()[keypoints].getX(), stroke.getPoints()[keypoints].getY()));
+			}
+		}
 
-		corners.push(points.length-1);
-		corners=postProcessCorners(points, corners, straws);
-		return corners;
-	}
+		function printStrokes(strokeList) {
+			i = 1;
+			for (keys in strokeList) {
+				var path = new Path();
+				console.log(keys);
+				if (i == 1) {
+					path.strokeColor = new Color(1, 1, 1);
+				} else {
+					path.strokeColor = new Color(1, 0, 1);
+				}
+				i = i * -1;
+				for (keypoints in strokeList[keys].getPoints()) {
+					path.add(new Point(strokeList[keys].getPoints()[keypoints].getX(), strokeList[keys].getPoints()[keypoints].getY()));
+				}
+
+
+			}
+		}
+		function resampleSpacing(points) {
+			var topLeftX = points[0].getX();
+			var topLeftY = points[0].getY();
+			var botRightX = points[0].getX();
+			var botRightY = points[0].getY();
+			for (var i = 0; i < points.length; i++) {
+				if (points[i].getX() <= topLeftX) {
+					topLeftX = points[i].getX();
+				}
+				if (points[i].getY() <= topLeftY) {
+					topLeftY = points[i].getY();
+				}
+				if (points[i].getX() >= botRightX) {
+					botRightX = points[i].getX();
+				}
+				if (points[i].getY() >= botRightY) {
+					botRightY = points[i].getY();
+				}
+			}
+			var diagonal = Math.sqrt(Math.pow((topLeftX - botRightX), 2) + Math.pow((topLeftY - botRightY), 2));
+			//console.log(diagonal);
+			return diagonal / 40;
+		}
 
 
 
-	function postProcessCorners(points, corners, straws){
-		//console.log("corner length: "+corners.length);
+		function resamplePoints(points, pointsCopy, S) {
+			var D = 0;
+			var resampled = [points[0]];
+			var origIndex = [0];
+			for (var i = 1; i < points.length; i++) {
+				var d = points[i - 1].distance(points[i], 0);
+				if (D + d >= S) {
+					var x = points[i - 1].getX() + ((S - D) / d) * (points[i].getX() - points[i - 1].getX());
+					var y = points[i - 1].getY() + ((S - D) / d) * (points[i].getY() - points[i - 1].getY());
+					var q = new srlib.core.data.container.Point(x, y, points[i].getTime(), 0);
+					resampled.push(q);
+					D = 0
+					points.splice(i, 0, q);
+					origIndex.push(i);
+				}
+				else {
+					D = D + d;
+				}
+			}
+			return [resampled, origIndex];
+
+		}
 
 
-		do{
-			var continues = true;
-			for (var i = 1; i < corners.length; i++){
 
-				var c1 = corners[i-1]; //index of i-1 th corner
-				var c2 = corners[i]; //index of ith corner
-				if (!isLine(points,c1,c2)){
-					//console.log("before halfway corner");
-					if (c1>=7&&c2<=points.length-7){
+		function getCorners(points) {
+			var corners = [];
+			var straws = [];
+			var strawsValue = [];
+			corners.push(0); //the beginning of the stroke
+			W = 7;
+			for (var i = W; i < points.length - W; i++) {
+				var distance = points[i - W].distance(points[i + W]);
+				straws[i] = distance;
+				strawsValue.push(distance);
+			}
 
-						var newCorner = halfwayCorner(straws,c1,c2);
-						//console.log("newCorner",newCorner,"c2",c2);
-						if (newCorner != c1 && newCorner!=-1) {
-							corners.splice(i,0,newCorner);
-							continues = false;
+
+			var strawsCopy = strawsValue.slice();
+			strawsCopy.sort(function (a, b) { return a - b; });
+			var t = 0;
+			var middle = Math.floor((strawsCopy.length - 1) / 2); // NB: operator precedence
+			if (strawsCopy.length % 2) {
+				t = 0.90 * strawsCopy[middle];
+			} else {
+				t = 0.90 * (strawsCopy[middle] + strawsCopy[middle + 1]) / 2.0;
+			}
+
+			//console.log("t: "+t);
+
+			for (var i = W; i < points.length - W; i++) {
+				if (straws[i] < t) {
+					var localMin = Infinity;
+					var localMinIndex = i;
+					while (i < points.length - W && straws[i] < t) {
+						if (straws[i] < localMin) {
+							localMin = straws[i];
+							localMinIndex = i;
 						}
-						
+						i++;
+					}
+					corners.push(localMinIndex);
+				}
+			}
+
+
+			corners.push(points.length - 1);
+			corners = postProcessCorners(points, corners, straws);
+			return corners;
+		}
+
+
+
+		function postProcessCorners(points, corners, straws) {
+			do {
+				var continues = true;
+				for (var i = 1; i < corners.length; i++) {
+
+					var c1 = corners[i - 1]; //index of i-1 th corner
+					var c2 = corners[i]; //index of ith corner
+					if (!isLine(points, c1, c2)) {
+						if (c1 >= 7 && c2 <= points.length - 7) {
+
+							var newCorner = halfwayCorner(straws, c1, c2);
+							if (newCorner != c1 && newCorner != -1) {
+								corners.splice(i, 0, newCorner);
+								continues = false;
+							}
+
+						}
 					}
 				}
-				//console.log("i: "+i);
+			} while (!continues);
+
+
+
+			for (var i = 1; i < corners.length - 1; i++) {
+				var c1 = corners[i - 1];
+				var c2 = corners[i + 1];
+				if (isLine(points, c1, c2)) {
+					corners.splice(i, 1);
+					i = i - 1;
+				}
 
 			}
-		}while(!continues);
-		
-		
 
-		for (var i = 1; i < corners.length-1;i++){
-			var c1 = corners[i-1];
-			var c2 = corners[i+1];
-			if (isLine(points,c1,c2)){
-				corners.splice(i,1);
-				i = i - 1;
+			return corners;
+
+		}
+
+		function halfwayCorner(straws, a, b) {
+			var quarter = parseInt((b - a) / 4);
+			var minValue = Infinity;
+			var minIndex = -1;
+			for (var i = a + quarter; i < b - quarter; i++) {
+				if (straws[i] < minValue) {
+					minValue = straws[i];
+					minIndex = i;
+				}
 			}
-
+			return minIndex;
 		}
 
-		return corners;
-
-	}
-
-	function halfwayCorner(straws,a,b){
-		var quarter = parseInt((b-a)/4);
-		var minValue = Infinity;
-		var minIndex = -1;
-		for (var i = a+quarter; i < b-quarter; i++){
-			//console.log("in if of halfwayCorner");
-			if (straws[i] < minValue){
-				minValue = straws[i];
-				minIndex = i;
+		function isLine(points, a, b) {
+			var threshold = 0.95;
+			var distance = points[a].distance(points[b]);
+			var path = pathDistance(points, a, b);
+			if (distance / path > threshold) {
+				//console.log("!!!!");
+				return true;
+			} else {
+				return false;
 			}
 		}
 
-		//console.log("min index in halfway corner: "+ minIndex);
-		return minIndex;
-	}
-
-	function isLine(points,a,b){
-		var threshold = 0.95;
-		//console.log("points size: "+points.length);
-		//console.log("(a,b) = "+ "("+a+","+b+")");
-		var distance = points[a].distance(points[b]);
-		var path = pathDistance(points,a,b);
-		if (distance/path > threshold){
-			//console.log("!!!!");
-			return true;
-		}else{
-			return false;
+		function pathDistance(points, a, b) {
+			var d = 0;
+			for (var i = a; i < b - 1; i++) {
+				d = d + points[i].distance(points[i + 1]);
+			}
+			return d;
 		}
-	}
 
-	function pathDistance(points,a,b){
-		var d = 0;
-		for (var i = a; i<b-1;i++){
-			d = d + points[i].distance(points[i+1]);
-		}
-		return d;
-	}
-	 
-</script>
+	</script>
 
 </body>
+
 </html>
