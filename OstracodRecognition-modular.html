@@ -3,6 +3,17 @@
 <head>
     <title>Ostracod Sketch Recognition</title>
     <link href="css/style.css" rel='stylesheet' type='text/css'/>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #myCanvas {
+            display: block;
+            background-color: white;
+        }
+    </style>
 </head>
 <body>
     <canvas id="myCanvas" resize="true"></canvas>
@@ -13,8 +24,8 @@
         <label id="output">Output</label>
     </div>
     <div style="position:fixed;top:0px;right:0px" id="filebutton">
-        <input type="file" id="myFile" onchange="setBackground()">
-        <button id="process" onclick="process()">Process Outline</button>
+        <input type="file" id="myFile" onchange="window.APP && window.APP.setBackground()">
+        <button id="process" onclick="window.APP && window.APP.process()">Process Outline</button>
     </div>
 
     <!-- External Libraries -->
@@ -36,18 +47,8 @@
         import { extractMorphologicalFeatures, calculateStrokeLengths } from './js/featureExtraction.js';
         import { predict } from './js/classifier.js';
 
-        // ==================== CONFIGURATION ====================
-        const CONFIG = {
-            CANVAS_ID: 'myCanvas',
-            FILE_INPUT_ID: 'myFile',
-            PROCESS_BUTTON_ID: 'process',
-            QUESTION_LABEL_ID: 'questionlabel',
-            OUTPUT_LABEL_ID: 'output',
-            MAX_LENGTH_COLOR: 'black',
-            OUTLINE_COLOR: 'red',
-            CENTROID_COLOR: 'red',
-            LINE_WIDTH: 2
-        };
+        // Install Paper.js as global FIRST
+        paper.install(window);
 
         // ==================== STATE MANAGEMENT ====================
         const AppState = {
@@ -73,88 +74,153 @@
             }
         };
 
-        // ==================== LOCAL HELPER FUNCTIONS ====================
-        
-        /**
-         * Extract filename from file path
-         */
-        function getFilename(filepath) {
-            const parts = filepath.split("\\");
-            return parts[parts.length - 1];
-        }
+        // ==================== GLOBAL APP OBJECT ====================
+        window.APP = {
+            AppState,
+            backgroundRaster: null,
 
-        /**
-         * Custom wrapper to convert SRLib Points to our Point class for analysis
-         * Only used for data processing, not for point creation in UI
-         */
-        function convertSrlibPointToAnalysisPoint(srlibPoint) {
-            return new Point(srlibPoint.getX(), srlibPoint.getY());
-        }
+            setBackground() {
+                const fileInput = document.getElementById("myFile");
+                const files = fileInput.files;
+                
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    const x = file.name;
+                    const name = x.split("\\");
+                    console.log(name[name.length - 1]);
+                    AppState.inputSpecie = name[name.length - 1];
+                    
+                    // Use FileReader to load image as data URL
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        document.getElementById("myCanvas").style.backgroundImage = "url(" + e.target.result + ")";
+                    };
+                    reader.readAsDataURL(file);
+                    
+                    // Reset state
+                    if (AppState.path) AppState.path.remove();
+                    if (AppState.userDefineMaxLength) AppState.userDefineMaxLength.remove();
+                    if (AppState.centroidCircle) AppState.centroidCircle.remove();
+                    AppState.sketch = null;
+                    AppState.stroke = null;
+                    AppState.userDefineMaxLength = new Path();
+                    AppState.path = new Path();
+                    AppState.strokeCount = 0;
+                    document.getElementById('output').innerHTML = '';
+                }
+            },
 
-        /**
-         * Extract features using imported functions
-         * Adapts SRLib sketch to our modular functions
-         */
-        function extractFeaturesFromSketch(sketch, maxPoints) {
-            const srlibPoints = Object.values(sketch.getPoints());
-            
-            // Convert analysis
-            const { deltaX, deltaY } = initializeDelta(srlibPoints);
-            const theta = initializeTheta(deltaX, deltaY);
+            process() {
+                if (!AppState.sketch) {
+                    alert('Please trace the outline first');
+                    return;
+                }
 
-            let rotation = 0, smoothness = 0, sharpness = 0;
-            for (const angle of theta) {
-                rotation += angle;
-                smoothness += Math.abs(angle);
-                sharpness += Math.pow(angle, 2);
-            }
+                try {
+                    document.getElementById('questionlabel').innerHTML = 'Processing...';
 
-            return { rotation, smoothness, sharpness };
-        }
+                    // Get all points
+                    let points = [];
+                    for (const keypoint in AppState.sketch.getPoints()) {
+                        points.push(AppState.sketch.getPoints()[keypoint]);
+                    }
 
-        /**
-         * Calculate stroke lengths for top and bottom halves
-         */
-        function computeStrokeLengths(points, maxPoints) {
-            let totalLength = 0, topLength = 0, botLength = 0;
-            const maxY = Math.max(maxPoints[0].getY(), maxPoints[1].getY());
+                    // Remove consecutive duplicates
+                    for (let j = 1; j < points.length; j++) {
+                        if (points[j].getX() == points[j - 1].getX() && points[j].getY() == points[j - 1].getY()) {
+                            points.splice(j, 1);
+                            j = j - 1;
+                        }
+                    }
 
-            for (let i = 0; i < points.length - 1; i++) {
-                const dx = points[i + 1].getX() - points[i].getX();
-                const dy = points[i + 1].getY() - points[i].getY();
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                totalLength += dist;
-                if (points[i].getY() < maxY) {
-                    topLength += dist;
-                } else {
-                    botLength += dist;
+                    // Calculate deltas and thetas
+                    const { deltaX, deltaY } = initializeDelta(points);
+                    const theta = initializeTheta(deltaX, deltaY);
+
+                    let rotation = 0.0, smoothness = 0.0, sharpness = 0.0;
+                    for (let j = 0; j < theta.length; j++) {
+                        rotation = rotation + theta[j];
+                        smoothness = smoothness + Math.abs(theta[j]);
+                        sharpness = sharpness + Math.pow(theta[j], 2);
+                    }
+
+                    const maxpoints = [AppState.maxLength1, AppState.maxLength2];
+                    const centroid = findCentroid(AppState.sketch);
+                    AppState.centroidCircle = new Path.Circle(new Point(centroid.getX(), centroid.getY()), 20);
+                    AppState.centroidCircle.strokeColor = 'red';
+
+                    // Rotate the outline
+                    const newEverything = rotateOutline(AppState.sketch, maxpoints);
+                    const newSketch = newEverything[0];
+                    const newmaxpoints = [newEverything[1], newEverything[2]];
+                    const newCentroid = findCentroid(newSketch);
+
+                    let newPoints = [];
+                    for (const key in newSketch.getPoints()) {
+                        newPoints.push(newSketch.getPoints()[key]);
+                    }
+
+                    // Calculate stroke lengths
+                    const { totalLength, topLength, bottomLength } = calculateStrokeLengths(newPoints, newmaxpoints);
+                    const topStrokeLength = topLength;
+                    const botStrokeLength = bottomLength;
+
+                    // Find halves
+                    const strokesInHalves = findHalves(newSketch, newmaxpoints, newCentroid);
+
+                    // Find vertical distances
+                    const pointWhereMax = findVerticalDistances(newPoints, newCentroid, newmaxpoints);
+
+                    if (!pointWhereMax) {
+                        document.getElementById('output').innerHTML = 'Error: Could not analyze outline properly';
+                        return;
+                    }
+
+                    const maxLengthDist = newmaxpoints[0].distance(newmaxpoints[1]);
+                    const ratio = maxLengthDist / pointWhereMax.maxHeight;
+                    const topLengthRatio = topStrokeLength / maxLengthDist;
+                    const botLengthRatio = botStrokeLength / maxLengthDist;
+                    const topBotRatio = botStrokeLength > 0 ? topStrokeLength / botStrokeLength : 0;
+
+                    console.log(rotation + "," + smoothness + "," + sharpness + "," + ratio + "," + pointWhereMax.maxLengthRatio + "," + topLengthRatio + "," + botLengthRatio + "," + topBotRatio);
+
+                    // Predict species
+                    const result = predict(smoothness, sharpness, ratio, pointWhereMax.maxLengthRatio, topLengthRatio, botLengthRatio, topBotRatio);
+
+                    console.log(result);
+
+                    // Determine valve side
+                    let valveSide = "Left";
+                    if (pointWhereMax.maxPoint.getX() > newCentroid.getX()) {
+                        valveSide = "Right";
+                    }
+
+                    const speciesName = result.species || result;
+                    const outputString = "Input: " + AppState.inputSpecie + "\n\nOutput:\nValve: " + valveSide + "\nClassified Species: " + speciesName;
+                    document.getElementById('output').innerHTML = "<pre style='white-space: pre-wrap;'>" + outputString + "</pre>";
+
+                } catch (error) {
+                    console.error('Error during processing:', error);
+                    document.getElementById('output').innerHTML = 'Error: ' + error.message;
                 }
             }
-            return { totalLength, topLength, botLength };
-        }
-
-        // ==================== UI HANDLERS ====================
-
-        /**
-         * Initialize Paper.js and drawing tool
-         */
+        };
+        // ==================== PAPER.JS INITIALIZATION ====================
         window.onload = function () {
-            paper.install(window);
-            paper.setup(CONFIG.CANVAS_ID);
-
+            paper.setup('myCanvas');
             const tool = new Tool();
             AppState.path = new Path();
             AppState.userDefineMaxLength = new Path();
 
             tool.onMouseDown = function (event) {
                 if (AppState.strokeCount === 0) {
-                    AppState.userDefineMaxLength.strokeColor = CONFIG.MAX_LENGTH_COLOR;
-                    AppState.userDefineMaxLength.strokeWidth = CONFIG.LINE_WIDTH;
+                    AppState.userDefineMaxLength.strokeColor = 'black';
+                    AppState.userDefineMaxLength.strokeWidth = 2;
                     AppState.maxLength1 = new srlib.core.data.container.Point(event.point.x, event.point.y);
                     AppState.userDefineMaxLength.add(event.point);
                 } else {
-                    AppState.path.strokeColor = CONFIG.OUTLINE_COLOR;
-                    AppState.path.strokeWidth = CONFIG.LINE_WIDTH;
+                    AppState.path.strokeColor = 'red';
+                    AppState.path.strokeWidth = 2;
                     AppState.stroke = new srlib.core.data.container.Stroke();
                     const point = new srlib.core.data.container.Point(event.point.x, event.point.y);
                     if (!AppState.sketch) {
@@ -171,7 +237,7 @@
                     AppState.strokeCount++;
                     AppState.maxLength2 = new srlib.core.data.container.Point(event.point.x, event.point.y);
                     AppState.userDefineMaxLength.add(event.point);
-                    document.getElementById(CONFIG.QUESTION_LABEL_ID).innerHTML = 'Trace outline';
+                    document.getElementById('questionlabel').innerHTML = 'Trace outline';
                 }
             };
 
@@ -183,90 +249,6 @@
                     AppState.stroke.addPoint(point);
                 }
             };
-        };
-
-        /**
-         * Load background image from file
-         */
-        window.setBackground = function() {
-            const filepath = document.getElementById(CONFIG.FILE_INPUT_ID).value;
-            const filename = getFilename(filepath);
-            document.getElementById(CONFIG.CANVAS_ID).style.backgroundImage = `url(${filename})`;
-            AppState.inputSpecie = filename;
-            AppState.reset();
-            document.getElementById(CONFIG.OUTPUT_LABEL_ID).innerHTML = '';
-        };
-
-        /**
-         * Process outline and classify species
-         * Uses imported modular functions for analysis
-         */
-        window.process = function() {
-            if (!AppState.sketch) {
-                alert('Please draw an outline first');
-                return;
-            }
-
-            document.getElementById(CONFIG.QUESTION_LABEL_ID).innerHTML = 'Draw inner parts';
-
-            // Extract features using imported modular function
-            const features = extractFeaturesFromSketch(AppState.sketch, [AppState.maxLength1, AppState.maxLength2]);
-
-            const maxLength = Math.sqrt(
-                Math.pow(AppState.maxLength2.getX() - AppState.maxLength1.getX(), 2) +
-                Math.pow(AppState.maxLength2.getY() - AppState.maxLength1.getY(), 2)
-            );
-
-            // Use imported shape analysis functions
-            const centroid = findCentroid(Object.values(AppState.sketch.getPoints()));
-            AppState.centroidCircle = new Path.Circle(new Point(centroid.getX(), centroid.getY()), 20);
-            AppState.centroidCircle.strokeColor = CONFIG.CENTROID_COLOR;
-
-            // Rotate outline using imported function
-            const rotated = rotateOutline(Object.values(AppState.sketch.getPoints()), [AppState.maxLength1, AppState.maxLength2]);
-            const newPoints = rotated.rotatedPoints.map(p => {
-                const pt = new srlib.core.data.container.Point(p.getX(), p.getY());
-                return pt;
-            });
-            const newSketch = new srlib.core.data.container.Sketch();
-            for (const pt of newPoints) {
-                newSketch.addPoint(pt);
-            }
-
-            const newmaxpoints = rotated.rotatedMaxPoints;
-            const newCentroid = findCentroid(newPoints);
-
-            // Find vertical distances using imported function
-            const verticalData = findVerticalDistances(newPoints, newCentroid, newmaxpoints);
-            if (!verticalData) {
-                alert('Could not analyze outline');
-                return;
-            }
-
-            // Compute stroke lengths
-            const lengths = computeStrokeLengths(newPoints, newmaxpoints);
-
-            // Calculate classification features
-            const ratio = maxLength / verticalData.maxHeight;
-            const topLengthRatio = lengths.topLength / maxLength;
-            const botLengthRatio = lengths.botLength / maxLength;
-            const topBotRatio = lengths.topLength / (lengths.botLength || 1);
-
-            // Use imported predict function
-            const species = predict(
-                features.smoothness,
-                features.sharpness,
-                ratio,
-                verticalData.maxLengthRatio,
-                topLengthRatio,
-                botLengthRatio,
-                topBotRatio
-            );
-
-            // Determine valve side using imported function
-            const valveSide = determineValveSide(verticalData.maxPoint, newCentroid);
-            const output = `Input: ${AppState.inputSpecie}\n\nOutput:\nValve: ${valveSide}\nClassified Species: ${species}`;
-            document.getElementById(CONFIG.OUTPUT_LABEL_ID).innerHTML = output.replace(/\n/g, '<br>');
         };
     </script>
 </body>
