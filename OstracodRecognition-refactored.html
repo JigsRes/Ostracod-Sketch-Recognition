@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ostracod Sketch Recognition</title>
+    <link href="css/style.css" rel='stylesheet' type='text/css'/>
+</head>
+<body>
+    <canvas id="myCanvas" resize="true"></canvas>
+    <div style="position:fixed;top:0px;left:0px">
+        <label id="questionlabel">Draw Maximum Length</label>
+    </div>
+    <div id="out" style="position:fixed;top:20px;right:0px;">
+        <label id="output">Output</label>
+    </div>
+    <div style="position:fixed;top:0px;right:0px" id="filebutton">
+        <input type="file" id="myFile" onchange="setBackground()">
+        <button id="process" onclick="process()">Process Outline</button>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="js/require.js"></script>
+    <script src="js/srlib.js"></script>
+    <script src="js/paper-full.js" type="text/javascript"></script>
+
+    <!-- Application Scripts (ES6 Module) -->
+    <script type="module">
+        import { Point, initializeDelta, initializeTheta, removeDuplicatePoints } from './js/utils.js';
+        import { 
+            findCentroid, 
+            findHalves, 
+            rotateOutline, 
+            findVerticalDistances, 
+            determineValveSide 
+        } from './js/shapeAnalysis.js';
+        import { extractMorphologicalFeatures, calculateStrokeLengths } from './js/featureExtraction.js';
+        import { predict } from './js/classifier.js';
+        // ==================== CONFIGURATION ====================
+        const CONFIG = {
+            CANVAS_ID: 'myCanvas',
+            FILE_INPUT_ID: 'myFile',
+            PROCESS_BUTTON_ID: 'process',
+            QUESTION_LABEL_ID: 'questionlabel',
+            OUTPUT_LABEL_ID: 'output',
+            MAX_LENGTH_COLOR: 'black',
+            OUTLINE_COLOR: 'red',
+            CENTROID_COLOR: 'red',
+            LINE_WIDTH: 2
+        };
+
+        // ==================== STATE MANAGEMENT ====================
+        const AppState = {
+            strokeCount: 0,
+            maxLength1: null,
+            maxLength2: null,
+            inputSpecie: null,
+            path: null,
+            userDefineMaxLength: null,
+            centroidCircle: null,
+            sketch: null,
+            stroke: null,
+
+            reset() {
+                if (this.path) this.path.remove();
+                if (this.userDefineMaxLength) this.userDefineMaxLength.remove();
+                if (this.centroidCircle) this.centroidCircle.remove();
+                this.sketch = null;
+                this.stroke = null;
+                this.userDefineMaxLength = new Path();
+                this.path = new Path();
+                this.strokeCount = 0;
+            }
+        };
+
+        // ==================== LOCAL HELPERS (Not in modules) ====================
+        
+        /**
+         * Extract filename from file path
+         */
+        function getFilename(filepath) {
+            const parts = filepath.split("\\");
+            return parts[parts.length - 1];
+        }
+
+        /**
+         * Calculate Euclidean distance between two points
+         */
+        function distance(p1, p2) {
+            const dx = p1.getX() - p2.getX();
+            const dy = p1.getY() - p2.getY();
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        /**
+         * Rotate outline to align with horizontal axis
+         */
+        function rotateOutline(newSketch, maxPoints) {
+            const outlineStroke = new srlib.core.data.container.Stroke();
+            const cos = (maxPoints[1].getX() - maxPoints[0].getX()) / distance(maxPoints[0], maxPoints[1]);
+            const sin = (maxPoints[1].getY() - maxPoints[0].getY()) / distance(maxPoints[0], maxPoints[1]);
+
+            for (const point of Object.values(newSketch.getPoints())) {
+                const x = point.getX() * cos + point.getY() * sin;
+                const y = -point.getX() * sin + point.getY() * cos;
+                outlineStroke.addPoint(new srlib.core.data.container.Point(x, y));
+            }
+
+            const newMax1X = maxPoints[0].getX() * cos + maxPoints[0].getY() * sin;
+            const newMax1Y = -maxPoints[0].getX() * sin + maxPoints[0].getY() * cos;
+            const newMax2X = maxPoints[1].getX() * cos + maxPoints[1].getY() * sin;
+            const newMax2Y = AppState.maxLength2.getY() * cos + AppState.maxLength2.getX() * sin;
+
+            newSketch.addStroke(outlineStroke);
+            return [newSketch, new srlib.core.data.container.Point(newMax1X, newMax1Y), new srlib.core.data.container.Point(newMax2X, newMax2Y)];
+        }
+
+        /**
+         * Find upper and lower halves of outline
+         */
+        function findHalves(sketchOutline, maxPoints, centroid) {
+            const pointList = Object.values(sketchOutline.getPoints());
+            const strokeUpper = new srlib.core.data.container.Stroke();
+            const strokeLower = new srlib.core.data.container.Stroke();
+
+            const leftMax = maxPoints[0].getX() < centroid.getX() ? maxPoints[0] : maxPoints[1];
+            const rightMax = maxPoints[0].getX() < centroid.getX() ? maxPoints[1] : maxPoints[0];
+
+            for (const point of pointList) {
+                if (point.getY() >= leftMax.getY() && point.getY() >= rightMax.getY()) {
+                    strokeUpper.addPoint(point);
+                } else if (point.getY() <= leftMax.getY() && point.getY() <= rightMax.getY()) {
+                    strokeLower.addPoint(point);
+                } else {
+                    if (point.getY() >= leftMax.getY()) {
+                        if (point.getX() < centroid.getX()) {
+                            strokeUpper.addPoint(point);
+                        } else {
+                            strokeLower.addPoint(point);
+                        }
+                    } else {
+                        if (point.getX() < centroid.getX()) {
+                            strokeLower.addPoint(point);
+                        } else {
+                            strokeUpper.addPoint(point);
+                        }
+                    }
+                }
+            }
+            return [strokeUpper, strokeLower];
+        }
+
+        /**
+         * Find maximum vertical distance from centroid
+         */
+        function findVerticalDistances(newSketch, referencePoint, newmaxpoints) {
+            const pointList = Object.values(newSketch.getPoints());
+            let maxVerticalDistanceSquared = 0;
+            let maxPoint = null;
+            const otherHalf = [];
+
+            for (const point of pointList) {
+                if (point.getY() < referencePoint.getY()) {
+                    const distSquared = Math.pow(point.getY() - referencePoint.getY(), 2);
+                    if (distSquared > maxVerticalDistanceSquared) {
+                        maxVerticalDistanceSquared = distSquared;
+                        maxPoint = point;
+                    }
+                } else {
+                    otherHalf.push(point);
+                }
+            }
+
+            if (!maxPoint) return null;
+
+            const otherPoint = getApproxXCoordinate(otherHalf, maxPoint.getX());
+            const maxHeight = distance(maxPoint, otherPoint);
+
+            const y1 = newmaxpoints[0].getY();
+            const y2 = maxPoint.getY();
+            const y3 = otherPoint.getY();
+            const maxLengthRatio = Math.abs((y1 - y2) / (y2 - y3 || 1));
+
+            return { maxPoint, maxHeight, maxLengthRatio };
+        }
+
+        /**
+         * Get approximate point at x coordinate
+         */
+        function getApproxXCoordinate(points, x) {
+            let minDelta = Number.MAX_VALUE;
+            let minPoint = null;
+
+            for (const point of points) {
+                const currDelta = Math.abs(point.getX() - x);
+                if (currDelta < minDelta) {
+                    minDelta = currDelta;
+                    minPoint = point;
+                }
+            }
+            return minPoint;
+        }
+
+        // ==================== FEATURE EXTRACTION ====================
+
+        /**
+         * Calculate delta changes between points
+         */
+        function initializeDelta(points) {
+            const deltaX = [], deltaY = [];
+            for (let i = 0; i < points.length - 1; i++) {
+                const dX = points[i + 1].getX() - points[i].getX();
+                const dY = points[i + 1].getY() - points[i].getY();
+                deltaX.push(dX);
+                deltaY.push(dY);
+            }
+            return { deltaX, deltaY };
+        }
+
+        /**
+         * Calculate angles (theta) between vectors
+         */
+        function initializeTheta(deltaX, deltaY) {
+            const theta = [];
+            for (let i = 1; i < deltaX.length; i++) {
+                const dotProduct = deltaX[i] * deltaX[i - 1] + deltaY[i] * deltaY[i - 1];
+                if (dotProduct !== 0) {
+                    const crossProduct = deltaX[i] * deltaY[i - 1] - deltaX[i - 1] * deltaY[i];
+                    theta.push(Math.atan(crossProduct / dotProduct));
+                }
+            }
+            return theta;
+        }
+
+        /**
+         * Extract morphological features from outline
+         */
+        function extractFeatures(sketch, maxPoints) {
+            const points = Object.values(sketch.getPoints());
+            const cleanPoints = removeDuplicates(points);
+
+            const { deltaX, deltaY } = initializeDelta(cleanPoints);
+            const theta = initializeTheta(deltaX, deltaY);
+
+            let rotation = 0, smoothness = 0, sharpness = 0;
+            for (const angle of theta) {
+                rotation += angle;
+                smoothness += Math.abs(angle);
+                sharpness += Math.pow(angle, 2);
+            }
+
+            return { rotation, smoothness, sharpness };
+        }
+
+        /**
+         * Calculate stroke lengths for top and bottom
+         */
+        function calculateStrokeLengths(newPoints, newmaxpoints) {
+            let totalLength = 0, topLength = 0, botLength = 0;
+            const maxY = Math.max(newmaxpoints[0].getY(), newmaxpoints[1].getY());
+
+            for (let i = 0; i < newPoints.length - 1; i++) {
+                const dist = distance(newPoints[i], newPoints[i + 1]);
+                totalLength += dist;
+                if (newPoints[i].getY() < maxY) {
+                    topLength += dist;
+                } else {
+                    botLength += dist;
+                }
+            }
+            return { totalLength, topLength, botLength };
+        }
+
+        // ==================== CLASSIFICATION ====================
+
+        /**
+         * Logistic regression coefficients
+         */
+        const CLASSIFIER = {
+            EC: {
+                intercept: -36.373285,
+                sharpness: 0.16206998,
+                ratio: 46.042491,
+                maxLengthRatio: -12.83812,
+                topLengthRatio: 4.724668,
+                botLengthRatio: -60.99577,
+                topBotRatio: 20.94821
+            },
+            L: {
+                intercept: 2.473576,
+                sharpness: -0.08435574,
+                ratio: 70.054086,
+                maxLengthRatio: -27.68299,
+                topLengthRatio: -45.096235,
+                botLengthRatio: 21.57071,
+                topBotRatio: -47.91339
+            },
+            CN: {
+                intercept: 43.920487,
+                sharpness: -0.0542765,
+                ratio: -1.571042,
+                maxLengthRatio: -59.08888,
+                topLengthRatio: -37.920384,
+                botLengthRatio: 94.12266,
+                topBotRatio: -53.87436
+            }
+        };
+
+        /**
+         * Predict species from features
+         */
+        function predict(smoothness, sharpness, ratio, maxLengthRatio, topLengthRatio, botLengthRatio, topBotRatio) {
+            const calculateScore = (coeffs) => {
+                return Math.exp(
+                    coeffs.intercept +
+                    coeffs.sharpness * sharpness +
+                    coeffs.ratio * ratio +
+                    coeffs.maxLengthRatio * maxLengthRatio +
+                    coeffs.topLengthRatio * topLengthRatio +
+                    coeffs.botLengthRatio * botLengthRatio +
+                    coeffs.topBotRatio * topBotRatio
+                );
+            };
+
+            const probEC = calculateScore(CLASSIFIER.EC);
+            const probL = calculateScore(CLASSIFIER.L);
+            const probCN = calculateScore(CLASSIFIER.CN);
+
+            const EC = probEC / (probL + probCN + 1);
+            const L = probL / (probEC + probCN + 1);
+            const CN = probCN / (probEC + probL + 1);
+            const BE = 1 - EC - L - CN;
+
+            const maxProb = Math.max(EC, BE, CN, L);
+            if (maxProb === EC) return "Elofsonella Concinna";
+            if (maxProb === BE) return "Baffinicythere Emarginata";
+            if (maxProb === CN) return "Cytheropteron Nodosoalatum";
+            return "Leptocythere";
+        }
+
+        // ==================== UI HANDLERS ====================
+
+        /**
+         * Initialize Paper.js and drawing tool
+         */
+        window.onload = function () {
+            paper.install(window);
+            paper.setup(CONFIG.CANVAS_ID);
+
+            const tool = new Tool();
+            AppState.path = new Path();
+            AppState.userDefineMaxLength = new Path();
+
+            tool.onMouseDown = function (event) {
+                if (AppState.strokeCount === 0) {
+                    AppState.userDefineMaxLength.strokeColor = CONFIG.MAX_LENGTH_COLOR;
+                    AppState.userDefineMaxLength.strokeWidth = CONFIG.LINE_WIDTH;
+                    AppState.maxLength1 = new srlib.core.data.container.Point(event.point.x, event.point.y);
+                    AppState.userDefineMaxLength.add(event.point);
+                } else {
+                    AppState.path.strokeColor = CONFIG.OUTLINE_COLOR;
+                    AppState.path.strokeWidth = CONFIG.LINE_WIDTH;
+                    AppState.stroke = new srlib.core.data.container.Stroke();
+                    const point = new srlib.core.data.container.Point(event.point.x, event.point.y);
+                    if (!AppState.sketch) {
+                        AppState.sketch = new srlib.core.data.container.Sketch();
+                    }
+                    AppState.sketch.addStroke(AppState.stroke);
+                    AppState.sketch.addPoint(point);
+                    AppState.stroke.addPoint(point);
+                }
+            };
+
+            tool.onMouseUp = function (event) {
+                if (AppState.strokeCount === 0) {
+                    AppState.strokeCount++;
+                    AppState.maxLength2 = new srlib.core.data.container.Point(event.point.x, event.point.y);
+                    AppState.userDefineMaxLength.add(event.point);
+                    document.getElementById(CONFIG.QUESTION_LABEL_ID).innerHTML = 'Trace outline';
+                }
+            };
+
+            tool.onMouseDrag = function (event) {
+                if (AppState.strokeCount !== 0) {
+                    AppState.path.add(event.point);
+                    const point = new srlib.core.data.container.Point(event.point.x, event.point.y);
+                    AppState.sketch.addPoint(point);
+                    AppState.stroke.addPoint(point);
+                }
+            };
+        };
+
+        /**
+         * Load background image from file
+         */
+        function setBackground() {
+            const filepath = document.getElementById(CONFIG.FILE_INPUT_ID).value;
+            const filename = getFilename(filepath);
+            document.getElementById(CONFIG.CANVAS_ID).style.backgroundImage = `url(${filename})`;
+            AppState.inputSpecie = filename;
+            AppState.reset();
+            document.getElementById(CONFIG.OUTPUT_LABEL_ID).innerHTML = '';
+        }
+
+        /**
+         * Process outline and classify species
+         */
+        function process() {
+            if (!AppState.sketch) {
+                alert('Please draw an outline first');
+                return;
+            }
+
+            document.getElementById(CONFIG.QUESTION_LABEL_ID).innerHTML = 'Draw inner parts';
+
+            const points = Object.values(AppState.sketch.getPoints());
+            const features = extractFeatures(AppState.sketch, [AppState.maxLength1, AppState.maxLength2]);
+
+            const maxLength = distance(AppState.maxLength1, AppState.maxLength2);
+            const centroid = findCentroid(AppState.sketch);
+            AppState.centroidCircle = new Path.Circle(new Point(centroid.getX(), centroid.getY()), 20);
+            AppState.centroidCircle.strokeColor = CONFIG.CENTROID_COLOR;
+
+            const rotated = rotateOutline(AppState.sketch, [AppState.maxLength1, AppState.maxLength2], centroid);
+            const newSketch = rotated[0];
+            const newmaxpoints = [rotated[1], rotated[2]];
+            const newCentroid = findCentroid(newSketch);
+
+            const newPoints = Object.values(newSketch.getPoints());
+            const lengths = calculateStrokeLengths(newPoints, newmaxpoints);
+
+            const verticalData = findVerticalDistances(newSketch, newCentroid, newmaxpoints);
+            if (!verticalData) {
+                alert('Could not analyze outline');
+                return;
+            }
+
+            const ratio = maxLength / verticalData.maxHeight;
+            const topLengthRatio = lengths.topLength / maxLength;
+            const botLengthRatio = lengths.botLength / maxLength;
+            const topBotRatio = lengths.topLength / lengths.botLength || 1;
+
+            const species = predict(
+                features.smoothness,
+                features.sharpness,
+                ratio,
+                verticalData.maxLengthRatio,
+                topLengthRatio,
+                botLengthRatio,
+                topBotRatio
+            );
+
+            const valveSide = verticalData.maxPoint.getX() > newCentroid.getX() ? "Right" : "Left";
+            const output = `Input: ${AppState.inputSpecie}\n\nOutput:\nValve: ${valveSide}\nClassified Species: ${species}`;
+            document.getElementById(CONFIG.OUTPUT_LABEL_ID).innerHTML = output.replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
